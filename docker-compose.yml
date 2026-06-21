@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+
+  # ─── Laravel User Service ───────────────────────────────────────────
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: user_service
+    restart: unless-stopped
+    ports:
+      - "8001:80"
+    env_file: .env
+    environment:
+      APP_NAME: UserService
+      APP_URL: http://localhost:8001
+    depends_on:
+      user-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - user-network
+
+  # ─── MySQL User Service ─────────────────────────────────────────────
+  user-db:
+    image: mysql:8.0
+    container_name: user_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-user_service_db}
+      MYSQL_USER: ${DB_USERNAME:-user_service_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret123}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+    ports:
+      - "3307:3306"
+    volumes:
+      - user_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - user-network
+
+  # ─── RabbitMQ Message Broker ────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672" 
+      - "15672:15672"    # AMQP protocol (internal)
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - user-network
+
+volumes:
+  user_db_data:
+  rabbitmq_data:
+
+networks:
+  user-network:
+    driver: bridge
